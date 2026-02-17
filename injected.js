@@ -87,16 +87,202 @@
 
   const getFirstPhotoUrl = (offer) => {
     const firstPhotoSet = offer?.photosSet?.[0];
-    if (typeof firstPhotoSet !== "string" || !firstPhotoSet.trim()) {
+    if (typeof firstPhotoSet === "string" && firstPhotoSet.trim()) {
+      const firstCandidate = firstPhotoSet.split(",")[0]?.trim();
+      const firstUrl = firstCandidate?.split(/\s+/)[0]?.trim();
+      if (firstUrl && (firstUrl.startsWith("http://") || firstUrl.startsWith("https://"))) {
+        return firstUrl;
+      }
+    }
+
+    const firstPhoto = offer?.photos?.[0];
+    const photoLink = typeof firstPhoto?.link === "string" ? firstPhoto.link.trim() : "";
+    if (!photoLink || (!photoLink.startsWith("http://") && !photoLink.startsWith("https://"))) {
       return null;
     }
 
-    const firstCandidate = firstPhotoSet.split(",")[0]?.trim();
-    const firstUrl = firstCandidate?.split(/\s+/)[0]?.trim();
-    if (!firstUrl || (!firstUrl.startsWith("http://") && !firstUrl.startsWith("https://"))) {
+    return photoLink
+      .replaceAll("{width}", "516")
+      .replaceAll("{height}", "361");
+  };
+
+  const getOfferPriceDisplay = (offer) => {
+    const price = offer?.price;
+    const displayValue = price?.displayValue;
+    if (typeof displayValue === "string" && displayValue.trim()) {
+      return displayValue.trim();
+    }
+
+    const regular = price?.regularPrice;
+    if (typeof regular?.value === "number") {
+      const currencySymbol = typeof regular.currencySymbol === "string" ? regular.currencySymbol : "";
+      return `${regular.value}${currencySymbol ? ` ${currencySymbol}` : ""}`;
+    }
+
+    if (price?.free === true) {
+      return "Za darmo";
+    }
+    if (price?.exchange === true) {
+      return "Zamiana";
+    }
+    if (price?.budget === true) {
+      return "Do uzgodnienia";
+    }
+
+    const priceParam = Array.isArray(offer?.params)
+      ? offer.params.find((param) => param?.key === "price")
+      : null;
+    const paramValue = priceParam?.value;
+    if (typeof paramValue?.label === "string" && paramValue.label.trim()) {
+      return paramValue.label.trim();
+    }
+    if (typeof paramValue?.value === "number") {
+      const currency = typeof paramValue?.currency === "string" ? paramValue.currency : "";
+      return `${paramValue.value}${currency ? ` ${currency}` : ""}`;
+    }
+    if (paramValue?.arranged === true || paramValue?.type === "arranged") {
+      return "Do uzgodnienia";
+    }
+    if (paramValue?.budget === true) {
+      return "Budzet";
+    }
+
+    return "Brak ceny";
+  };
+
+  const sanitizeHtml = (rawHtml) => {
+    if (typeof rawHtml !== "string" || !rawHtml.trim()) {
+      return "";
+    }
+
+    const container = document.createElement("div");
+    container.innerHTML = rawHtml;
+
+    const blocked = container.querySelectorAll("script, style, iframe, object, embed, link, meta");
+    for (const node of blocked) {
+      node.remove();
+    }
+
+    const all = container.querySelectorAll("*");
+    for (const el of all) {
+      const attrs = Array.from(el.attributes);
+      for (const attr of attrs) {
+        const name = attr.name.toLowerCase();
+        const value = attr.value || "";
+        if (name.startsWith("on")) {
+          el.removeAttribute(attr.name);
+          continue;
+        }
+        if ((name === "href" || name === "src") && /^\s*javascript:/i.test(value)) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    }
+
+    return container.innerHTML;
+  };
+
+  const truncateHtmlPreserveTags = (rawHtml, maxChars) => {
+    const safeHtml = sanitizeHtml(rawHtml);
+    if (!safeHtml) {
+      return "";
+    }
+
+    const root = document.createElement("div");
+    root.innerHTML = safeHtml;
+
+    const state = {
+      remaining: maxChars,
+      done: false
+    };
+
+    const trimNode = (node) => {
+      if (state.done) {
+        node.remove();
+        return;
+      }
+
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent || "";
+        if (!text) {
+          return;
+        }
+        if (text.length <= state.remaining) {
+          state.remaining -= text.length;
+          return;
+        }
+        const trimmed = text.slice(0, Math.max(0, state.remaining)).trimEnd();
+        node.textContent = `${trimmed}...`;
+        state.remaining = 0;
+        state.done = true;
+        return;
+      }
+
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return;
+      }
+
+      const children = Array.from(node.childNodes);
+      for (const child of children) {
+        trimNode(child);
+      }
+    };
+
+    const top = Array.from(root.childNodes);
+    for (const node of top) {
+      trimNode(node);
+    }
+
+    return root.innerHTML;
+  };
+
+  const getSafeOfferUrl = (offer) => {
+    const url = offer?.url;
+    if (typeof url !== "string" || !url.trim()) {
       return null;
     }
-    return firstUrl;
+    const trimmed = url.trim();
+    if (!/^https?:\/\//i.test(trimmed)) {
+      return null;
+    }
+    return trimmed;
+  };
+
+  const buildOfferPopupHtml = (item) => {
+    const offer = item?.offer ?? {};
+    const title = typeof offer.title === "string" && offer.title.trim() ? offer.title.trim() : `Oferta ${item.id}`;
+    const descriptionHtml = truncateHtmlPreserveTags(offer?.description, 80);
+    const priceDisplay = getOfferPriceDisplay(offer);
+    const photoUrl = getFirstPhotoUrl(offer);
+    const offerUrl = getSafeOfferUrl(offer);
+
+    const photoPart = photoUrl
+      ? `<img src="${escapeHtml(photoUrl)}" alt="" style="display:block;width:100%;height:180px;object-fit:cover;border-radius:8px;" />`
+      : `<div style="width:100%;height:180px;border-radius:8px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:#6b7280;font:13px/1.3 sans-serif;">Brak zdjecia</div>`;
+
+    const titlePart = offerUrl
+      ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px;">
+<a href="${escapeHtml(offerUrl)}" target="_blank" rel="noopener noreferrer" style="font:600 14px/1.35 sans-serif;color:#111827;text-decoration:none;">${escapeHtml(title)}</a>
+<span aria-hidden="true" title="Otworz oferte" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;color:#2563eb;">
+<svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M14 5h5v5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+<path d="M10 14L19 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+<path d="M19 14v5h-14v-14h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</span>
+</div>`
+      : `<div style="margin-top:6px;font:600 14px/1.35 sans-serif;color:#111827;">${escapeHtml(title)}</div>`;
+
+    const descriptionPart = descriptionHtml
+      ? `<div style="margin-top:6px;font:13px/1.45 sans-serif;color:#374151;max-height:140px;overflow:auto;">${descriptionHtml}</div>`
+      : `<div style="margin-top:6px;font:13px/1.45 sans-serif;color:#6b7280;">Brak opisu</div>`;
+
+    return `<div style="width:280px;">
+${photoPart}
+<div style="margin-top:8px;font:700 15px/1.3 sans-serif;color:#111827;">${escapeHtml(priceDisplay)}</div>
+${titlePart}
+${descriptionPart}
+</div>`;
   };
 
   const renderModalRows = () => {
@@ -120,8 +306,13 @@
     const rows = items
       .map((item) => {
         const offerValue = safeJson(item.offer);
+        const priceDisplay = getOfferPriceDisplay(item.offer);
+        const title =
+          typeof item?.offer?.title === "string" && item.offer.title.trim()
+            ? item.offer.title.trim()
+            : `Oferta ${item.id}`;
         return `<details style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:10px;">
-<summary style="cursor:pointer;font:600 14px/1.3 sans-serif;">offer.id: ${escapeHtml(item.id)} (source: ${escapeHtml(item.source)})</summary>
+<summary style="cursor:pointer;font:600 14px/1.3 sans-serif;">offer.id: ${escapeHtml(item.id)} | ${escapeHtml(priceDisplay)} | ${escapeHtml(title)} (source: ${escapeHtml(item.source)})</summary>
 <pre style="margin:10px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;">${escapeHtml(offerValue)}</pre>
 </details>`;
       })
@@ -220,27 +411,30 @@
         latLngs.push(latLng);
 
         const photoUrl = getFirstPhotoUrl(item.offer);
+        const priceDisplay = getOfferPriceDisplay(item.offer);
         let marker = null;
         if (photoUrl) {
           const imageIcon = L.divIcon({
             className: "olx-map-image-marker",
             html:
+              `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;">` +
               `<div style="width:46px;height:46px;border:2px solid #fff;border-radius:8px;` +
               `box-shadow:0 4px 10px rgba(0,0,0,0.28);overflow:hidden;background:#fff;">` +
               `<img src="${escapeHtml(photoUrl)}" alt="" style="display:block;width:100%;height:100%;object-fit:cover;" />` +
+              `</div>` +
+              `<div style="max-width:90px;padding:1px 6px;border-radius:999px;background:#111827;color:#fff;` +
+              `font:700 11px/1.5 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(priceDisplay)}</div>` +
               `</div>`,
-            iconSize: [46, 46],
-            iconAnchor: [23, 23],
-            popupAnchor: [0, -20]
+            iconSize: [90, 66],
+            iconAnchor: [45, 56],
+            popupAnchor: [0, -42]
           });
           marker = L.marker(latLng, { icon: imageIcon }).addTo(leafletMap);
         } else {
           marker = L.marker(latLng).addTo(leafletMap);
         }
 
-        marker.bindPopup(
-          `<strong>Oferta ${escapeHtml(item.id)}</strong><br/>lat: ${lat.toFixed(5)}, lon: ${lon.toFixed(5)}`
-        );
+        marker.bindPopup(buildOfferPopupHtml(item));
 
         const radiusKm = Number(item?.map?.radius);
         if (Number.isFinite(radiusKm) && radiusKm > 0) {
