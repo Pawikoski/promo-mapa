@@ -164,14 +164,14 @@ query ListingSearchQuery(
     }
   };
 
-  const logOffers = (payload) => {
-    const rootData = payload?.data;
-    const observedAds =
-      rootData?.clientCompatibleObservedAds?.data ??
-      rootData?.clientComptaibleObservedAds?.data;
+  // const logOffers = (payload) => {
+  //   const rootData = payload?.data;
+  //   const observedAds =
+  //     rootData?.clientCompatibleObservedAds?.data ??
+  //     rootData?.clientComptaibleObservedAds?.data;
 
-    upsertOffers(observedAds, "observed");
-  };
+  //   upsertOffers(observedAds, "observed");
+  // };
 
   const logPrerenderedOffers = (rawState) => {
     const parsedState = tryParseJson(rawState);
