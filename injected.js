@@ -8,6 +8,7 @@
   const MAP_LOAD_BUTTON_ID = "olx-map-load-button";
   const OFFER_STORE = new Map();
   let leafletLoadPromise = null;
+  let markerClusterLoadPromise = null;
   let leafletMap = null;
   let loadInProgress = false;
   const FRIENDLY_LINKS_API = "https://www.olx.pl/api/v1/friendly-links/query-params/";
@@ -730,42 +731,91 @@ ${descriptionPart}
 
   const loadLeaflet = () => {
     if (window.L) {
-      return Promise.resolve(window.L);
-    }
-    if (leafletLoadPromise) {
+      // continue to cluster plugin load below
+    } else if (leafletLoadPromise) {
       return leafletLoadPromise;
     }
+    if (!leafletLoadPromise) {
+      leafletLoadPromise = new Promise((resolve, reject) => {
+        const scriptSrc = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+        const styleHref = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 
-    leafletLoadPromise = new Promise((resolve, reject) => {
-      const scriptSrc = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      const styleHref = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        if (!document.querySelector(`link[href="${styleHref}"]`)) {
+          const style = document.createElement("link");
+          style.rel = "stylesheet";
+          style.href = styleHref;
+          style.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
+          style.crossOrigin = "";
+          document.head.appendChild(style);
+        }
 
-      if (!document.querySelector(`link[href="${styleHref}"]`)) {
-        const style = document.createElement("link");
-        style.rel = "stylesheet";
-        style.href = styleHref;
-        style.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
-        style.crossOrigin = "";
-        document.head.appendChild(style);
-      }
+        if (window.L) {
+          resolve(window.L);
+          return;
+        }
 
-      const existingScript = document.querySelector(`script[src="${scriptSrc}"]`);
-      if (existingScript) {
-        existingScript.addEventListener("load", () => resolve(window.L));
-        existingScript.addEventListener("error", () => reject(new Error("Leaflet script error")));
-        return;
-      }
+        const existingScript = document.querySelector(`script[src="${scriptSrc}"]`);
+        if (existingScript) {
+          existingScript.addEventListener("load", () => resolve(window.L));
+          existingScript.addEventListener("error", () => reject(new Error("Leaflet script error")));
+          return;
+        }
 
-      const script = document.createElement("script");
-      script.src = scriptSrc;
-      script.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=";
-      script.crossOrigin = "";
-      script.onload = () => resolve(window.L);
-      script.onerror = () => reject(new Error("Leaflet script error"));
-      document.head.appendChild(script);
-    });
+        const script = document.createElement("script");
+        script.src = scriptSrc;
+        script.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=";
+        script.crossOrigin = "";
+        script.onload = () => resolve(window.L);
+        script.onerror = () => reject(new Error("Leaflet script error"));
+        document.head.appendChild(script);
+      });
+    }
 
-    return leafletLoadPromise;
+    if (!markerClusterLoadPromise) {
+      markerClusterLoadPromise = leafletLoadPromise.then((L) => {
+        if (!L) {
+          return L;
+        }
+        if (typeof L.markerClusterGroup === "function") {
+          return L;
+        }
+
+        const clusterStyleHref = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css";
+        const clusterDefaultStyleHref =
+          "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css";
+        const clusterScriptSrc = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js";
+
+        if (!document.querySelector(`link[href="${clusterStyleHref}"]`)) {
+          const style = document.createElement("link");
+          style.rel = "stylesheet";
+          style.href = clusterStyleHref;
+          document.head.appendChild(style);
+        }
+        if (!document.querySelector(`link[href="${clusterDefaultStyleHref}"]`)) {
+          const style = document.createElement("link");
+          style.rel = "stylesheet";
+          style.href = clusterDefaultStyleHref;
+          document.head.appendChild(style);
+        }
+
+        return new Promise((resolve) => {
+          const existingScript = document.querySelector(`script[src="${clusterScriptSrc}"]`);
+          if (existingScript) {
+            existingScript.addEventListener("load", () => resolve(window.L));
+            existingScript.addEventListener("error", () => resolve(window.L));
+            return;
+          }
+
+          const script = document.createElement("script");
+          script.src = clusterScriptSrc;
+          script.onload = () => resolve(window.L);
+          script.onerror = () => resolve(window.L);
+          document.head.appendChild(script);
+        });
+      });
+    }
+
+    return markerClusterLoadPromise;
   };
 
   const renderLeafletMap = async (locatedItems) => {
@@ -799,6 +849,15 @@ ${descriptionPart}
         maxZoom: 19,
         attribution: "&copy; OpenStreetMap contributors"
       }).addTo(leafletMap);
+      const markerLayer =
+        typeof L.markerClusterGroup === "function"
+          ? L.markerClusterGroup({
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            maxClusterRadius: 40
+          })
+          : L.layerGroup();
+      markerLayer.addTo(leafletMap);
 
       const latLngs = [];
       for (const item of locatedItems) {
@@ -826,12 +885,13 @@ ${descriptionPart}
             iconAnchor: [45, 56],
             popupAnchor: [0, -42]
           });
-          marker = L.marker(latLng, { icon: imageIcon }).addTo(leafletMap);
+          marker = L.marker(latLng, { icon: imageIcon });
         } else {
-          marker = L.marker(latLng).addTo(leafletMap);
+          marker = L.marker(latLng);
         }
 
         marker.bindPopup(buildOfferPopupHtml(item));
+        markerLayer.addLayer(marker);
 
         const radiusKm = Number(item?.map?.radius);
         if (Number.isFinite(radiusKm) && radiusKm > 0) {
