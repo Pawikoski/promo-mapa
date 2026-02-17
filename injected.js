@@ -6,11 +6,13 @@
   const MAP_CANVAS_ID = "olx-map-canvas";
   const MAP_STATUS_ID = "olx-map-status";
   const MAP_LOAD_BUTTON_ID = "olx-map-load-button";
+  const MAP_GROUP_TOGGLE_ID = "olx-map-group-toggle";
   const OFFER_STORE = new Map();
   let leafletLoadPromise = null;
   let markerClusterLoadPromise = null;
   let leafletMap = null;
   let loadInProgress = false;
+  let mapGroupingEnabled = false;
   const FRIENDLY_LINKS_API = "https://www.olx.pl/api/v1/friendly-links/query-params/";
   const DEFAULT_LIMIT = 40;
   const DEFAULT_OFFSET = 0;
@@ -469,12 +471,17 @@ ${descriptionPart}
 
     list.innerHTML = `<div id="${MAP_STATUS_ID}" style="padding:0 0 10px;color:#57606a;font:13px/1.4 sans-serif;"></div>
 <div id="${MAP_CANVAS_ID}" style="height:420px;border-radius:10px;border:1px solid #d1d5db;overflow:hidden;background:#f3f4f6;"></div>
-<div style="margin-top:10px;">
+<div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+<label style="display:inline-flex;align-items:center;gap:8px;font:600 13px/1.2 sans-serif;color:#111827;cursor:pointer;">
+<input id="${MAP_GROUP_TOGGLE_ID}" type="checkbox" ${mapGroupingEnabled ? "checked" : ""} />
+grupuj
+</label>
 <button id="${MAP_LOAD_BUTTON_ID}" type="button" style="border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;font:600 13px/1.2 sans-serif;">laduj</button>
 </div>
 <div style="margin-top:14px">${rows}</div>`;
-    renderLeafletMap(locatedItems);
+    renderLeafletMap(locatedItems, mapGroupingEnabled);
     bindLoadButton();
+    bindGroupToggle(locatedItems);
   };
 
   const buildSearchParametersFromFriendlyLinks = (friendlyLinksResponse, options = {}) => {
@@ -722,6 +729,19 @@ ${descriptionPart}
     });
   };
 
+  const bindGroupToggle = (locatedItems) => {
+    const toggle = document.getElementById(MAP_GROUP_TOGGLE_ID);
+    if (!toggle || toggle.__olxGroupBound) {
+      return;
+    }
+    toggle.__olxGroupBound = true;
+
+    toggle.addEventListener("change", () => {
+      mapGroupingEnabled = Boolean(toggle.checked);
+      renderLeafletMap(locatedItems, mapGroupingEnabled);
+    });
+  };
+
   const setMapStatus = (text) => {
     const statusNode = document.getElementById(MAP_STATUS_ID);
     if (statusNode) {
@@ -818,7 +838,7 @@ ${descriptionPart}
     return markerClusterLoadPromise;
   };
 
-  const renderLeafletMap = async (locatedItems) => {
+  const renderLeafletMap = async (locatedItems, useGrouping = false) => {
     const mapNode = document.getElementById(MAP_CANVAS_ID);
     if (!mapNode) {
       return;
@@ -850,7 +870,7 @@ ${descriptionPart}
         attribution: "&copy; OpenStreetMap contributors"
       }).addTo(leafletMap);
       const markerLayer =
-        typeof L.markerClusterGroup === "function"
+        useGrouping && typeof L.markerClusterGroup === "function"
           ? L.markerClusterGroup({
             spiderfyOnMaxZoom: true,
             showCoverageOnHover: false,
