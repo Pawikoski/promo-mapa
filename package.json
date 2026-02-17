@@ -1,0 +1,16 @@
+{
+  "name": "olx-map",
+  "version": "1.0.0",
+  "main": "content.js",
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --outfile=dist/injected.js --format=iife --target=es2020",
+    "watch": "esbuild src/index.js --bundle --outfile=dist/injected.js --format=iife --target=es2020 --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "esbuild": "^0.27.3"
+  }
+}

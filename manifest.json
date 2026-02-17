@@ -17,7 +17,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "injected.js"
+        "dist/injected.js"
       ],
       "matches": [
         "https://www.olx.pl/*"
