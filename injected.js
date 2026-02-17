@@ -7,12 +7,14 @@
   const MAP_STATUS_ID = "olx-map-status";
   const MAP_LOAD_BUTTON_ID = "olx-map-load-button";
   const MAP_GROUP_TOGGLE_ID = "olx-map-group-toggle";
+  const MAP_PRICE_COLOR_TOGGLE_ID = "olx-map-price-color-toggle";
   const OFFER_STORE = new Map();
   let leafletLoadPromise = null;
   let markerClusterLoadPromise = null;
   let leafletMap = null;
   let loadInProgress = false;
   let mapGroupingEnabled = false;
+  let mapPriceColoringEnabled = true;
   const FRIENDLY_LINKS_API = "https://www.olx.pl/api/v1/friendly-links/query-params/";
   const DEFAULT_LIMIT = 40;
   const DEFAULT_OFFSET = 0;
@@ -164,14 +166,14 @@ query ListingSearchQuery(
     }
   };
 
-  // const logOffers = (payload) => {
-  //   const rootData = payload?.data;
-  //   const observedAds =
-  //     rootData?.clientCompatibleObservedAds?.data ??
-  //     rootData?.clientComptaibleObservedAds?.data;
+  const logOffers = (payload) => {
+    const rootData = payload?.data;
+    const observedAds =
+      rootData?.clientCompatibleObservedAds?.data ??
+      rootData?.clientComptaibleObservedAds?.data;
 
-  //   upsertOffers(observedAds, "observed");
-  // };
+    upsertOffers(observedAds, "observed");
+  };
 
   const logPrerenderedOffers = (rawState) => {
     const parsedState = tryParseJson(rawState);
@@ -256,6 +258,37 @@ query ListingSearchQuery(
     }
 
     return "Brak ceny";
+  };
+
+  const getOfferPriceNumeric = (offer) => {
+    const regularValue = offer?.price?.regularPrice?.value;
+    if (typeof regularValue === "number" && Number.isFinite(regularValue)) {
+      return regularValue;
+    }
+
+    const priceParam = Array.isArray(offer?.params)
+      ? offer.params.find((param) => param?.key === "price")
+      : null;
+    const priceParamValue = priceParam?.value?.value;
+    if (typeof priceParamValue === "number" && Number.isFinite(priceParamValue)) {
+      return priceParamValue;
+    }
+
+    return null;
+  };
+
+  const getPriceBadgeColor = (priceValue, minPrice, maxPrice, useColorScale) => {
+    if (!useColorScale || !Number.isFinite(priceValue) || !Number.isFinite(minPrice) || !Number.isFinite(maxPrice)) {
+      return "#111827";
+    }
+
+    if (maxPrice <= minPrice) {
+      return "#166534";
+    }
+
+    const ratio = Math.min(1, Math.max(0, (priceValue - minPrice) / (maxPrice - minPrice)));
+    const hue = 120 - ratio * 120;
+    return `hsl(${hue.toFixed(0)} 75% 35%)`;
   };
 
   const getOfferLocationDisplay = (offer) => {
@@ -453,11 +486,16 @@ ${descriptionPart}
 <input id="${MAP_GROUP_TOGGLE_ID}" type="checkbox" ${mapGroupingEnabled ? "checked" : ""} />
 grupuj
 </label>
+<label style="display:inline-flex;align-items:center;gap:8px;font:600 13px/1.2 sans-serif;color:#111827;cursor:pointer;">
+<input id="${MAP_PRICE_COLOR_TOGGLE_ID}" type="checkbox" ${mapPriceColoringEnabled ? "checked" : ""} />
+kolor cen
+</label>
 <button id="${MAP_LOAD_BUTTON_ID}" type="button" style="border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;font:600 13px/1.2 sans-serif;">laduj</button>
 </div>`;
     renderLeafletMap(locatedItems, mapGroupingEnabled);
     bindLoadButton();
     bindGroupToggle(locatedItems);
+    bindPriceColorToggle(locatedItems);
   };
 
   const buildSearchParametersFromFriendlyLinks = (friendlyLinksResponse, options = {}) => {
@@ -718,6 +756,19 @@ grupuj
     });
   };
 
+  const bindPriceColorToggle = (locatedItems) => {
+    const toggle = document.getElementById(MAP_PRICE_COLOR_TOGGLE_ID);
+    if (!toggle || toggle.__olxPriceColorBound) {
+      return;
+    }
+    toggle.__olxPriceColorBound = true;
+
+    toggle.addEventListener("change", () => {
+      mapPriceColoringEnabled = Boolean(toggle.checked);
+      renderLeafletMap(locatedItems, mapGroupingEnabled);
+    });
+  };
+
   const setMapStatus = (text) => {
     const statusNode = document.getElementById(MAP_STATUS_ID);
     if (statusNode) {
@@ -856,6 +907,12 @@ grupuj
       markerLayer.addTo(leafletMap);
 
       const latLngs = [];
+      const numericPrices = locatedItems
+        .map((item) => getOfferPriceNumeric(item.offer))
+        .filter((value) => Number.isFinite(value));
+      const minPrice = numericPrices.length ? Math.min(...numericPrices) : NaN;
+      const maxPrice = numericPrices.length ? Math.max(...numericPrices) : NaN;
+
       for (const item of locatedItems) {
         const lat = Number(item.map.lat);
         const lon = Number(item.map.lon);
@@ -864,6 +921,8 @@ grupuj
 
         const photoUrl = getFirstPhotoUrl(item.offer);
         const priceDisplay = getOfferPriceDisplay(item.offer);
+        const priceValue = getOfferPriceNumeric(item.offer);
+        const badgeBg = getPriceBadgeColor(priceValue, minPrice, maxPrice, mapPriceColoringEnabled);
         let marker = null;
         if (photoUrl) {
           const imageIcon = L.divIcon({
@@ -874,7 +933,7 @@ grupuj
               `box-shadow:0 4px 10px rgba(0,0,0,0.28);overflow:hidden;background:#fff;">` +
               `<img src="${escapeHtml(photoUrl)}" alt="" style="display:block;width:100%;height:100%;object-fit:cover;" />` +
               `</div>` +
-              `<div style="max-width:90px;padding:1px 6px;border-radius:999px;background:#111827;color:#fff;` +
+              `<div style="max-width:90px;padding:1px 6px;border-radius:999px;background:${badgeBg};color:#fff;` +
               `font:700 11px/1.5 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(priceDisplay)}</div>` +
               `</div>`,
             iconSize: [90, 66],
@@ -1102,22 +1161,22 @@ grupuj
     (url === TARGET_URL || url.startsWith(`${TARGET_URL}?`));
 
   const originalFetch = window.fetch;
-  window.fetch = async (...args) => {
-    const response = await originalFetch(...args);
-    const requestUrl = typeof args[0] === "string" ? args[0] : args[0]?.url;
-    const requestMethod =
-      (args[1]?.method || args[0]?.method || "GET").toUpperCase();
+  // window.fetch = async (...args) => {
+  //   const response = await originalFetch(...args);
+  //   const requestUrl = typeof args[0] === "string" ? args[0] : args[0]?.url;
+  //   const requestMethod =
+  //     (args[1]?.method || args[0]?.method || "GET").toUpperCase();
 
-    if (requestMethod === "POST" && isTargetGraphql(requestUrl)) {
-      response
-        .clone()
-        .json()
-        .then(logOffers)
-        .catch(() => {});
-    }
+  //   if (requestMethod === "POST" && isTargetGraphql(requestUrl)) {
+  //     response
+  //       .clone()
+  //       .json()
+  //       .then(logOffers)
+  //       .catch(() => {});
+  //   }
 
-    return response;
-  };
+  //   return response;
+  // };
 
   const originalOpen = XMLHttpRequest.prototype.open;
   const originalSend = XMLHttpRequest.prototype.send;
