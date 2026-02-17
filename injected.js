@@ -446,39 +446,15 @@ ${descriptionPart}
       return;
     }
 
-    const rows = items
-      .map((item) => {
-        const offerValue = safeJson(item.offer);
-        const priceDisplay = getOfferPriceDisplay(item.offer);
-        const locationDisplay = getOfferLocationDisplay(item.offer);
-        const title =
-          typeof item?.offer?.title === "string" && item.offer.title.trim()
-            ? item.offer.title.trim()
-            : `Oferta ${item.id}`;
-        return `<details style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:10px;">
-<summary style="cursor:pointer;list-style:none;">
-<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;font:700 14px/1.3 sans-serif;">
-<span style="color:#111827;">${escapeHtml(priceDisplay)}</span>
-<span style="color:#374151;text-align:right;">${escapeHtml(locationDisplay)}</span>
-</div>
-<div style="margin-top:6px;font:600 14px/1.35 sans-serif;color:#111827;">${escapeHtml(title)}</div>
-<div style="margin-top:4px;font:12px/1.3 sans-serif;color:#6b7280;">offer.id: ${escapeHtml(item.id)} (source: ${escapeHtml(item.source)})</div>
-</summary>
-<pre style="margin:10px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;">${escapeHtml(offerValue)}</pre>
-</details>`;
-      })
-      .join("");
-
     list.innerHTML = `<div id="${MAP_STATUS_ID}" style="padding:0 0 10px;color:#57606a;font:13px/1.4 sans-serif;"></div>
-<div id="${MAP_CANVAS_ID}" style="height:420px;border-radius:10px;border:1px solid #d1d5db;overflow:hidden;background:#f3f4f6;"></div>
+<div id="${MAP_CANVAS_ID}" style="height:76vh;border-radius:10px;border:1px solid #d1d5db;overflow:hidden;background:#f3f4f6;"></div>
 <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
 <label style="display:inline-flex;align-items:center;gap:8px;font:600 13px/1.2 sans-serif;color:#111827;cursor:pointer;">
 <input id="${MAP_GROUP_TOGGLE_ID}" type="checkbox" ${mapGroupingEnabled ? "checked" : ""} />
 grupuj
 </label>
 <button id="${MAP_LOAD_BUTTON_ID}" type="button" style="border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;font:600 13px/1.2 sans-serif;">laduj</button>
-</div>
-<div style="margin-top:14px">${rows}</div>`;
+</div>`;
     renderLeafletMap(locatedItems, mapGroupingEnabled);
     bindLoadButton();
     bindGroupToggle(locatedItems);
@@ -953,7 +929,7 @@ grupuj
 
     const modal = document.createElement("div");
     modal.style.width = "min(1200px, 96vw)";
-    modal.style.maxHeight = "90vh";
+    modal.style.maxHeight = "98vh";
     modal.style.overflow = "hidden";
     modal.style.background = "#fff";
     modal.style.borderRadius = "12px";
