@@ -14,7 +14,6 @@
   let leafletMap = null;
   let leafletApi = null;
   let leafletMarkerLayer = null;
-  let leafletCircleLayer = null;
   let renderedOfferIds = new Set();
   let loadInProgress = false;
   let mapGroupingEnabled = false;
@@ -790,7 +789,7 @@ kolor cen
   };
 
   const addOfferToExistingMap = (item, priceRange) => {
-    if (!leafletMap || !leafletApi || !leafletMarkerLayer || !leafletCircleLayer || !item) {
+    if (!leafletMap || !leafletApi || !leafletMarkerLayer || !item) {
       return false;
     }
     const idKey = String(item.id);
@@ -839,18 +838,6 @@ kolor cen
 
     marker.bindPopup(buildOfferPopupHtml(item));
     leafletMarkerLayer.addLayer(marker);
-
-    const radiusKm = Number(item?.map?.radius);
-    if (Number.isFinite(radiusKm) && radiusKm > 0) {
-      const circle = L.circle(latLng, {
-        radius: radiusKm * 1000,
-        color: "#2563eb",
-        weight: 1,
-        fillColor: "#60a5fa",
-        fillOpacity: 0.08
-      });
-      leafletCircleLayer.addLayer(circle);
-    }
 
     renderedOfferIds.add(idKey);
     return true;
@@ -1019,9 +1006,6 @@ kolor cen
           })
           : L.layerGroup();
       leafletMarkerLayer.addTo(leafletMap);
-      leafletCircleLayer = L.layerGroup();
-      leafletCircleLayer.addTo(leafletMap);
-
       const latLngs = [];
       const numericPrices = locatedItems
         .map((item) => getOfferPriceNumeric(item.offer))
