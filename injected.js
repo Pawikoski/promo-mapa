@@ -608,6 +608,21 @@ ${descriptionPart}
     return response.json();
   };
 
+  const extractOffersFromPayload = (payload) => {
+    const offersFromClientCompatible =
+      payload?.data?.clientCompatibleListings?.data ??
+      payload?.data?.clientComptabileListings?.data;
+    if (Array.isArray(offersFromClientCompatible)) {
+      return offersFromClientCompatible;
+    }
+
+    if (Array.isArray(payload?.data)) {
+      return payload.data;
+    }
+
+    return [];
+  };
+
   const followNextLinks = async (initialPayload) => {
     const maxIterations = 5;
     let nextUrl = extractNextHrefFromResponse(initialPayload);
@@ -616,6 +631,7 @@ ${descriptionPart}
     while (nextUrl && iteration < maxIterations) {
       iteration += 1;
       const responsePayload = await fetchJsonFromUrl(nextUrl);
+      upsertOffers(extractOffersFromPayload(responsePayload), `next-${iteration}`);
       console.log(`OLX next request #${iteration} url:`, nextUrl);
       console.log(`OLX next request #${iteration} response:`, responsePayload);
       nextUrl = extractNextHrefFromResponse(responsePayload);
@@ -688,6 +704,7 @@ ${descriptionPart}
         }
 
         const response2 = await graphqlResponse.json();
+        upsertOffers(extractOffersFromPayload(response2), "graphql-load");
         console.log("OLX graphql ListingSearchQuery response:", response2);
         const nextRequestsCount = await followNextLinks(response2);
         setMapStatus(
