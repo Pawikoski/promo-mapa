@@ -5,9 +5,114 @@
   const MAP_LIST_ID = "olx-map-list";
   const MAP_CANVAS_ID = "olx-map-canvas";
   const MAP_STATUS_ID = "olx-map-status";
+  const MAP_LOAD_BUTTON_ID = "olx-map-load-button";
   const OFFER_STORE = new Map();
   let leafletLoadPromise = null;
   let leafletMap = null;
+  let loadInProgress = false;
+  const FRIENDLY_LINKS_API = "https://www.olx.pl/api/v1/friendly-links/query-params/";
+  const DEFAULT_LIMIT = 40;
+  const DEFAULT_OFFSET = 0;
+  const LISTING_SEARCH_QUERY = `
+query ListingSearchQuery(
+  $searchParameters: [SearchParameter!] = []
+  $fetchJobSummary: Boolean = false
+  $fetchPayAndShip: Boolean = false
+) {
+  clientCompatibleListings(searchParameters: $searchParameters) {
+    __typename
+    ... on ListingSuccess {
+      __typename
+      data {
+        id
+        title
+        url
+        description
+        photos {
+          link
+          height
+          rotation
+          width
+        }
+        location {
+          city {
+            id
+            name
+            normalized_name
+            _nodeId
+          }
+          district {
+            id
+            name
+            normalized_name
+            _nodeId
+          }
+          region {
+            id
+            name
+            normalized_name
+            _nodeId
+          }
+        }
+        params {
+          key
+          name
+          type
+          value {
+            __typename
+            ... on GenericParam {
+              key
+              label
+            }
+            ... on PriceParam {
+              value
+              type
+              label
+              currency
+              arranged
+              budget
+              negotiable
+            }
+          }
+        }
+        map {
+          lat
+          lon
+          radius
+          show_detailed
+          zoom
+        }
+        jobSummary @include(if: $fetchJobSummary) {
+          whyApply
+          whyApplyTags
+        }
+        payAndShip @include(if: $fetchPayAndShip) {
+          sellerPaidDeliveryEnabled
+        }
+      }
+      links {
+        next {
+          href
+        }
+      }
+    }
+    ... on ListingError {
+      __typename
+      error {
+        code
+        detail
+        status
+        title
+        validation {
+          detail
+          field
+          title
+        }
+      }
+    }
+  }
+}
+`;
 
   const tryParseJson = (value) => {
     if (value == null) {
@@ -363,8 +468,176 @@ ${descriptionPart}
 
     list.innerHTML = `<div id="${MAP_STATUS_ID}" style="padding:0 0 10px;color:#57606a;font:13px/1.4 sans-serif;"></div>
 <div id="${MAP_CANVAS_ID}" style="height:420px;border-radius:10px;border:1px solid #d1d5db;overflow:hidden;background:#f3f4f6;"></div>
+<div style="margin-top:10px;">
+<button id="${MAP_LOAD_BUTTON_ID}" type="button" style="border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;font:600 13px/1.2 sans-serif;">laduj</button>
+</div>
 <div style="margin-top:14px">${rows}</div>`;
     renderLeafletMap(locatedItems);
+    bindLoadButton();
+  };
+
+  const buildSearchParametersFromFriendlyLinks = (friendlyLinksResponse, options = {}) => {
+    const sourceData = friendlyLinksResponse?.data;
+    const searchParameters = [];
+    const offset = options.offset ?? DEFAULT_OFFSET;
+    const limit = options.limit ?? DEFAULT_LIMIT;
+
+    searchParameters.push({ key: "offset", value: String(offset) });
+    searchParameters.push({ key: "limit", value: String(limit) });
+
+    if (sourceData && typeof sourceData === "object") {
+      for (const [key, value] of Object.entries(sourceData)) {
+        if (value == null) {
+          continue;
+        }
+        if (Array.isArray(value)) {
+          for (let i = 0; i < value.length; i += 1) {
+            const item = value[i];
+            if (item == null) {
+              continue;
+            }
+            searchParameters.push({
+              key: `${key}[${i}]`,
+              value: String(item)
+            });
+          }
+          continue;
+        }
+        searchParameters.push({
+          key,
+          value: String(value)
+        });
+      }
+    }
+
+    if (options.lastSeenId != null) {
+      searchParameters.push({ key: "last_seen_id", value: String(options.lastSeenId) });
+    }
+    if (options.sl != null) {
+      searchParameters.push({ key: "sl", value: String(options.sl) });
+    }
+
+    return searchParameters;
+  };
+
+  const buildListingSearchPayload = (friendlyLinksResponse, options = {}) => ({
+    query: LISTING_SEARCH_QUERY,
+    variables: {
+      searchParameters: buildSearchParametersFromFriendlyLinks(friendlyLinksResponse, options),
+      fetchJobSummary: false,
+      fetchPayAndShip: true
+    }
+  });
+
+  const getCookieValue = (cookieName) => {
+    const prefix = `${cookieName}=`;
+    const pairs = document.cookie ? document.cookie.split("; ") : [];
+    for (const pair of pairs) {
+      if (pair.startsWith(prefix)) {
+        return pair.slice(prefix.length);
+      }
+    }
+    return "";
+  };
+
+  const getPaginationContext = () => {
+    const params = new URLSearchParams(window.location.search);
+    const pageRaw = params.get("page");
+    const pageNum = Number(pageRaw);
+    const page = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
+    const offset = (page - 1) * DEFAULT_LIMIT;
+
+    const lastSeenId = params.get("min_id") || null;
+    let sl = params.get("sl") || null;
+
+    if (!sl) {
+      const onapCookie = decodeURIComponent(getCookieValue("onap") || "");
+      if (onapCookie) {
+        const firstSegment = onapCookie.split("-")[0]?.trim();
+        if (firstSegment) {
+          sl = firstSegment;
+        }
+      }
+    }
+
+    return { offset, limit: DEFAULT_LIMIT, lastSeenId, sl };
+  };
+
+  const fetchFriendlyLinks = async () => {
+    const pathSegments = window.location.pathname
+      .split("/")
+      .filter(Boolean);
+    const friendlyPath = pathSegments.join(",");
+
+    const params = new URLSearchParams(window.location.search);
+    params.delete("reason");
+    if (params.has("min_id") && !params.has("page")) {
+      params.set("page", "2");
+    }
+    const queryString = params.toString();
+    const endpointByPath = `${FRIENDLY_LINKS_API}${friendlyPath}/${queryString ? `?${queryString}` : ""}`;
+
+    const response = await fetch(endpointByPath, {
+      method: "GET",
+      credentials: "include"
+    });
+
+    if (!response.ok) {
+      throw new Error(`friendly-links request failed (${response.status})`);
+    }
+
+    return response.json();
+  };
+
+  const bindLoadButton = () => {
+    const button = document.getElementById(MAP_LOAD_BUTTON_ID);
+    if (!button || button.__olxLoadBound) {
+      return;
+    }
+    button.__olxLoadBound = true;
+
+    button.addEventListener("click", async () => {
+      if (loadInProgress) {
+        return;
+      }
+      loadInProgress = true;
+      button.disabled = true;
+      button.textContent = "ladowanie...";
+
+      try {
+        const response1 = await fetchFriendlyLinks();
+        console.log("OLX friendly-links response:", response1);
+
+        const paginationContext = getPaginationContext();
+        const request2Payload = buildListingSearchPayload(response1, paginationContext);
+        console.log("OLX graphql ListingSearchQuery payload:", request2Payload);
+        const graphqlResponse = await fetch(TARGET_URL, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+            "x-client": "DESKTOP"
+          },
+          body: JSON.stringify(request2Payload)
+        });
+
+        if (!graphqlResponse.ok) {
+          throw new Error(`graphql request failed (${graphqlResponse.status})`);
+        }
+
+        const response2 = await graphqlResponse.json();
+        console.log("OLX graphql ListingSearchQuery response:", response2);
+        setMapStatus("Wyslano request #2 do GraphQL i zalogowano odpowiedz.");
+      } catch (error) {
+        console.error("OLX load button error:", error);
+        setMapStatus("Nie udalo sie pobrac danych lub wykonac requestu GraphQL.");
+      } finally {
+        loadInProgress = false;
+        button.disabled = false;
+        button.textContent = "laduj";
+      }
+    });
   };
 
   const setMapStatus = (text) => {
