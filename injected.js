@@ -150,6 +150,37 @@
     return "Brak ceny";
   };
 
+  const getOfferLocationDisplay = (offer) => {
+    const location = offer?.location;
+    if (!location || typeof location !== "object") {
+      return "Brak lokalizacji";
+    }
+
+    if (typeof location.pathName === "string" && location.pathName.trim()) {
+      return location.pathName.trim();
+    }
+
+    const cityName =
+      (typeof location?.cityName === "string" && location.cityName.trim()) ||
+      (typeof location?.city?.name === "string" && location.city.name.trim()) ||
+      "";
+    const districtName =
+      (typeof location?.districtName === "string" && location.districtName.trim()) ||
+      (typeof location?.district?.name === "string" && location.district.name.trim()) ||
+      "";
+    const regionName =
+      (typeof location?.regionName === "string" && location.regionName.trim()) ||
+      (typeof location?.region?.name === "string" && location.region.name.trim()) ||
+      "";
+
+    const parts = [regionName, cityName, districtName].filter(Boolean);
+    if (parts.length) {
+      return parts.join(", ");
+    }
+
+    return "Brak lokalizacji";
+  };
+
   const sanitizeHtml = (rawHtml) => {
     if (typeof rawHtml !== "string" || !rawHtml.trim()) {
       return "";
@@ -253,6 +284,7 @@
     const title = typeof offer.title === "string" && offer.title.trim() ? offer.title.trim() : `Oferta ${item.id}`;
     const descriptionHtml = truncateHtmlPreserveTags(offer?.description, 80);
     const priceDisplay = getOfferPriceDisplay(offer);
+    const locationDisplay = getOfferLocationDisplay(offer);
     const photoUrl = getFirstPhotoUrl(offer);
     const offerUrl = getSafeOfferUrl(offer);
 
@@ -279,7 +311,10 @@
 
     return `<div style="width:280px;">
 ${photoPart}
-<div style="margin-top:8px;font:700 15px/1.3 sans-serif;color:#111827;">${escapeHtml(priceDisplay)}</div>
+<div style="margin-top:8px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+<div style="font:700 15px/1.3 sans-serif;color:#111827;">${escapeHtml(priceDisplay)}</div>
+<div style="font:600 12px/1.35 sans-serif;color:#4b5563;text-align:right;">${escapeHtml(locationDisplay)}</div>
+</div>
 ${titlePart}
 ${descriptionPart}
 </div>`;
@@ -307,12 +342,20 @@ ${descriptionPart}
       .map((item) => {
         const offerValue = safeJson(item.offer);
         const priceDisplay = getOfferPriceDisplay(item.offer);
+        const locationDisplay = getOfferLocationDisplay(item.offer);
         const title =
           typeof item?.offer?.title === "string" && item.offer.title.trim()
             ? item.offer.title.trim()
             : `Oferta ${item.id}`;
         return `<details style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:10px;">
-<summary style="cursor:pointer;font:600 14px/1.3 sans-serif;">offer.id: ${escapeHtml(item.id)} | ${escapeHtml(priceDisplay)} | ${escapeHtml(title)} (source: ${escapeHtml(item.source)})</summary>
+<summary style="cursor:pointer;list-style:none;">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;font:700 14px/1.3 sans-serif;">
+<span style="color:#111827;">${escapeHtml(priceDisplay)}</span>
+<span style="color:#374151;text-align:right;">${escapeHtml(locationDisplay)}</span>
+</div>
+<div style="margin-top:6px;font:600 14px/1.35 sans-serif;color:#111827;">${escapeHtml(title)}</div>
+<div style="margin-top:4px;font:12px/1.3 sans-serif;color:#6b7280;">offer.id: ${escapeHtml(item.id)} (source: ${escapeHtml(item.source)})</div>
+</summary>
 <pre style="margin:10px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;">${escapeHtml(offerValue)}</pre>
 </details>`;
       })
@@ -475,8 +518,8 @@ ${descriptionPart}
     overlay.style.zIndex = "2147483647";
 
     const modal = document.createElement("div");
-    modal.style.width = "min(900px, 92vw)";
-    modal.style.maxHeight = "80vh";
+    modal.style.width = "min(1200px, 96vw)";
+    modal.style.maxHeight = "90vh";
     modal.style.overflow = "hidden";
     modal.style.background = "#fff";
     modal.style.borderRadius = "12px";
