@@ -3,7 +3,11 @@
   const MAP_BUTTON_ID = "olx-map-open-button";
   const MAP_MODAL_ID = "olx-map-modal";
   const MAP_LIST_ID = "olx-map-list";
+  const MAP_CANVAS_ID = "olx-map-canvas";
+  const MAP_STATUS_ID = "olx-map-status";
   const OFFER_STORE = new Map();
+  let leafletLoadPromise = null;
+  let leafletMap = null;
 
   const tryParseJson = (value) => {
     if (value == null) {
@@ -38,6 +42,7 @@
 
       OFFER_STORE.set(String(id), {
         id,
+        offer,
         map: offer.map ?? null,
         source: sourceLabel
       });
@@ -72,6 +77,14 @@
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
 
+  const safeJson = (value) => {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return "[nie mozna zserializowac obiektu]";
+    }
+  };
+
   const renderModalRows = () => {
     const list = document.getElementById(MAP_LIST_ID);
     if (!list) {
@@ -79,6 +92,12 @@
     }
 
     const items = Array.from(OFFER_STORE.values());
+    const locatedItems = items.filter((item) => {
+      const lat = Number(item?.map?.lat);
+      const lon = Number(item?.map?.lon);
+      return Number.isFinite(lat) && Number.isFinite(lon);
+    });
+
     if (!items.length) {
       list.innerHTML = "<div style='padding:12px;color:#57606a;'>Brak danych ofert.</div>";
       return;
@@ -86,15 +105,132 @@
 
     const rows = items
       .map((item) => {
-        const mapValue = item.map == null ? "null" : JSON.stringify(item.map, null, 2);
-        return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:10px;">
-<div style="font:600 14px/1.3 sans-serif;margin-bottom:6px;">offer.id: ${escapeHtml(item.id)}</div>
-<pre style="margin:0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;">offer.map: ${escapeHtml(mapValue)}</pre>
-</div>`;
+        const offerValue = safeJson(item.offer);
+        return `<details style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:10px;">
+<summary style="cursor:pointer;font:600 14px/1.3 sans-serif;">offer.id: ${escapeHtml(item.id)} (source: ${escapeHtml(item.source)})</summary>
+<pre style="margin:10px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;">${escapeHtml(offerValue)}</pre>
+</details>`;
       })
       .join("");
 
-    list.innerHTML = rows;
+    list.innerHTML = `<div id="${MAP_STATUS_ID}" style="padding:0 0 10px;color:#57606a;font:13px/1.4 sans-serif;"></div>
+<div id="${MAP_CANVAS_ID}" style="height:420px;border-radius:10px;border:1px solid #d1d5db;overflow:hidden;background:#f3f4f6;"></div>
+<div style="margin-top:14px">${rows}</div>`;
+    renderLeafletMap(locatedItems);
+  };
+
+  const setMapStatus = (text) => {
+    const statusNode = document.getElementById(MAP_STATUS_ID);
+    if (statusNode) {
+      statusNode.textContent = text;
+    }
+  };
+
+  const loadLeaflet = () => {
+    if (window.L) {
+      return Promise.resolve(window.L);
+    }
+    if (leafletLoadPromise) {
+      return leafletLoadPromise;
+    }
+
+    leafletLoadPromise = new Promise((resolve, reject) => {
+      const scriptSrc = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      const styleHref = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+
+      if (!document.querySelector(`link[href="${styleHref}"]`)) {
+        const style = document.createElement("link");
+        style.rel = "stylesheet";
+        style.href = styleHref;
+        style.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
+        style.crossOrigin = "";
+        document.head.appendChild(style);
+      }
+
+      const existingScript = document.querySelector(`script[src="${scriptSrc}"]`);
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(window.L));
+        existingScript.addEventListener("error", () => reject(new Error("Leaflet script error")));
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = scriptSrc;
+      script.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=";
+      script.crossOrigin = "";
+      script.onload = () => resolve(window.L);
+      script.onerror = () => reject(new Error("Leaflet script error"));
+      document.head.appendChild(script);
+    });
+
+    return leafletLoadPromise;
+  };
+
+  const renderLeafletMap = async (locatedItems) => {
+    const mapNode = document.getElementById(MAP_CANVAS_ID);
+    if (!mapNode) {
+      return;
+    }
+
+    if (!locatedItems.length) {
+      setMapStatus("Brak współrzędnych w offer.map (lat/lon).");
+      mapNode.innerHTML = "";
+      return;
+    }
+
+    setMapStatus(`Punkty na mapie: ${locatedItems.length}`);
+
+    try {
+      const L = await loadLeaflet();
+      if (!L) {
+        setMapStatus("Nie udało się załadować biblioteki mapy.");
+        return;
+      }
+
+      if (leafletMap) {
+        leafletMap.remove();
+        leafletMap = null;
+      }
+
+      leafletMap = L.map(mapNode, { preferCanvas: true });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap contributors"
+      }).addTo(leafletMap);
+
+      const latLngs = [];
+      for (const item of locatedItems) {
+        const lat = Number(item.map.lat);
+        const lon = Number(item.map.lon);
+        const latLng = [lat, lon];
+        latLngs.push(latLng);
+
+        const marker = L.marker(latLng).addTo(leafletMap);
+        marker.bindPopup(
+          `<strong>Oferta ${escapeHtml(item.id)}</strong><br/>lat: ${lat.toFixed(5)}, lon: ${lon.toFixed(5)}`
+        );
+
+        const radiusKm = Number(item?.map?.radius);
+        if (Number.isFinite(radiusKm) && radiusKm > 0) {
+          L.circle(latLng, {
+            radius: radiusKm * 1000,
+            color: "#2563eb",
+            weight: 1,
+            fillColor: "#60a5fa",
+            fillOpacity: 0.08
+          }).addTo(leafletMap);
+        }
+      }
+
+      if (latLngs.length === 1) {
+        const zoom = Number(locatedItems[0]?.map?.zoom);
+        leafletMap.setView(latLngs[0], Number.isFinite(zoom) ? zoom : 13);
+      } else {
+        leafletMap.fitBounds(latLngs, { padding: [24, 24], maxZoom: 15 });
+      }
+    } catch {
+      setMapStatus("Mapa nie mogła zostać załadowana (Leaflet/OpenStreetMap).");
+    }
   };
 
   const ensureModal = () => {
