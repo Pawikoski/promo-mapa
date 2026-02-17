@@ -12,6 +12,10 @@
   let leafletLoadPromise = null;
   let markerClusterLoadPromise = null;
   let leafletMap = null;
+  let leafletApi = null;
+  let leafletMarkerLayer = null;
+  let leafletCircleLayer = null;
+  let renderedOfferIds = new Set();
   let loadInProgress = false;
   let mapGroupingEnabled = false;
   let mapPriceColoringEnabled = true;
@@ -136,10 +140,11 @@ query ListingSearchQuery(
     return null;
   };
 
-  const upsertOffers = (offers, sourceLabel) => {
+  const upsertOffers = (offers, sourceLabel, options = {}) => {
     if (!Array.isArray(offers)) {
-      return;
+      return [];
     }
+    const addedItems = [];
 
     for (const offer of offers) {
       if (!offer || typeof offer !== "object") {
@@ -150,20 +155,27 @@ query ListingSearchQuery(
         continue;
       }
 
-      OFFER_STORE.set(String(id), {
+      const key = String(id);
+      const existed = OFFER_STORE.has(key);
+      const item = {
         id,
         offer,
         map: offer.map ?? null,
         source: sourceLabel
-      });
+      };
+      OFFER_STORE.set(key, item);
+      if (!existed) {
+        addedItems.push(item);
+      }
 
       console.log(`OLX ${sourceLabel} offer:`, offer.id, offer.map);
     }
 
     const modal = document.getElementById(MAP_MODAL_ID);
-    if (modal && modal.style.display !== "none") {
+    if (!options.skipRender && modal && modal.style.display !== "none") {
       renderModalRows();
     }
+    return addedItems;
   };
 
   const logOffers = (payload) => {
@@ -290,6 +302,15 @@ query ListingSearchQuery(
     const hue = 120 - ratio * 120;
     return `hsl(${hue.toFixed(0)} 75% 35%)`;
   };
+
+  const getLocatedItems = (items) =>
+    (Array.isArray(items) ? items : Array.from(OFFER_STORE.values())).filter((item) => {
+      const lat = Number(item?.map?.lat);
+      const lon = Number(item?.map?.lon);
+      return Number.isFinite(lat) && Number.isFinite(lon);
+    });
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const getOfferLocationDisplay = (offer) => {
     const location = offer?.location;
@@ -468,11 +489,7 @@ ${descriptionPart}
     }
 
     const items = Array.from(OFFER_STORE.values());
-    const locatedItems = items.filter((item) => {
-      const lat = Number(item?.map?.lat);
-      const lon = Number(item?.map?.lon);
-      return Number.isFinite(lat) && Number.isFinite(lon);
-    });
+    const locatedItems = getLocatedItems(items);
 
     if (!items.length) {
       list.innerHTML = "<div style='padding:12px;color:#57606a;'>Brak danych ofert.</div>";
@@ -653,7 +670,10 @@ kolor cen
     while (nextUrl && iteration < maxIterations) {
       iteration += 1;
       const responsePayload = await fetchJsonFromUrl(nextUrl);
-      upsertOffers(extractOffersFromPayload(responsePayload), `next-${iteration}`);
+      const added = upsertOffers(extractOffersFromPayload(responsePayload), `next-${iteration}`, {
+        skipRender: true
+      });
+      await addOffersSequentiallyToMap(added, 5);
       console.log(`OLX next request #${iteration} url:`, nextUrl);
       console.log(`OLX next request #${iteration} response:`, responsePayload);
       nextUrl = extractNextHrefFromResponse(responsePayload);
@@ -767,6 +787,98 @@ kolor cen
       mapPriceColoringEnabled = Boolean(toggle.checked);
       renderLeafletMap(locatedItems, mapGroupingEnabled);
     });
+  };
+
+  const addOfferToExistingMap = (item, priceRange) => {
+    if (!leafletMap || !leafletApi || !leafletMarkerLayer || !leafletCircleLayer || !item) {
+      return false;
+    }
+    const idKey = String(item.id);
+    if (renderedOfferIds.has(idKey)) {
+      return false;
+    }
+
+    const L = leafletApi;
+    const lat = Number(item?.map?.lat);
+    const lon = Number(item?.map?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return false;
+    }
+    const latLng = [lat, lon];
+    const photoUrl = getFirstPhotoUrl(item.offer);
+    const priceDisplay = getOfferPriceDisplay(item.offer);
+    const priceValue = getOfferPriceNumeric(item.offer);
+    const badgeBg = getPriceBadgeColor(
+      priceValue,
+      priceRange?.minPrice,
+      priceRange?.maxPrice,
+      mapPriceColoringEnabled
+    );
+
+    let marker = null;
+    if (photoUrl) {
+      const imageIcon = L.divIcon({
+        className: "olx-map-image-marker",
+        html:
+          `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;">` +
+          `<div style="width:46px;height:46px;border:2px solid #fff;border-radius:8px;` +
+          `box-shadow:0 4px 10px rgba(0,0,0,0.28);overflow:hidden;background:#fff;">` +
+          `<img src="${escapeHtml(photoUrl)}" alt="" style="display:block;width:100%;height:100%;object-fit:cover;" />` +
+          `</div>` +
+          `<div style="max-width:90px;padding:1px 6px;border-radius:999px;background:${badgeBg};color:#fff;` +
+          `font:700 11px/1.5 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(priceDisplay)}</div>` +
+          `</div>`,
+        iconSize: [90, 66],
+        iconAnchor: [45, 56],
+        popupAnchor: [0, -42]
+      });
+      marker = L.marker(latLng, { icon: imageIcon });
+    } else {
+      marker = L.marker(latLng);
+    }
+
+    marker.bindPopup(buildOfferPopupHtml(item));
+    leafletMarkerLayer.addLayer(marker);
+
+    const radiusKm = Number(item?.map?.radius);
+    if (Number.isFinite(radiusKm) && radiusKm > 0) {
+      const circle = L.circle(latLng, {
+        radius: radiusKm * 1000,
+        color: "#2563eb",
+        weight: 1,
+        fillColor: "#60a5fa",
+        fillOpacity: 0.08
+      });
+      leafletCircleLayer.addLayer(circle);
+    }
+
+    renderedOfferIds.add(idKey);
+    return true;
+  };
+
+  const addOffersSequentiallyToMap = async (addedItems, delayMs = 5) => {
+    if (!Array.isArray(addedItems) || !addedItems.length || !leafletMap) {
+      return;
+    }
+    const locatedItems = getLocatedItems(addedItems);
+    if (!locatedItems.length) {
+      return;
+    }
+
+    const allLocatedItems = getLocatedItems();
+    const numericPrices = allLocatedItems
+      .map((item) => getOfferPriceNumeric(item.offer))
+      .filter((value) => Number.isFinite(value));
+    const priceRange = {
+      minPrice: numericPrices.length ? Math.min(...numericPrices) : NaN,
+      maxPrice: numericPrices.length ? Math.max(...numericPrices) : NaN
+    };
+
+    for (const item of locatedItems) {
+      addOfferToExistingMap(item, priceRange);
+      await sleep(delayMs);
+    }
+    setMapStatus(`Punkty na mapie: ${getLocatedItems().length}`);
   };
 
   const setMapStatus = (text) => {
@@ -890,13 +1002,15 @@ kolor cen
         leafletMap.remove();
         leafletMap = null;
       }
+      leafletApi = L;
+      renderedOfferIds = new Set();
 
       leafletMap = L.map(mapNode, { preferCanvas: true });
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
         attribution: "&copy; OpenStreetMap contributors"
       }).addTo(leafletMap);
-      const markerLayer =
+      leafletMarkerLayer =
         useGrouping && typeof L.markerClusterGroup === "function"
           ? L.markerClusterGroup({
             spiderfyOnMaxZoom: true,
@@ -904,7 +1018,9 @@ kolor cen
             maxClusterRadius: 40
           })
           : L.layerGroup();
-      markerLayer.addTo(leafletMap);
+      leafletMarkerLayer.addTo(leafletMap);
+      leafletCircleLayer = L.layerGroup();
+      leafletCircleLayer.addTo(leafletMap);
 
       const latLngs = [];
       const numericPrices = locatedItems
@@ -918,46 +1034,7 @@ kolor cen
         const lon = Number(item.map.lon);
         const latLng = [lat, lon];
         latLngs.push(latLng);
-
-        const photoUrl = getFirstPhotoUrl(item.offer);
-        const priceDisplay = getOfferPriceDisplay(item.offer);
-        const priceValue = getOfferPriceNumeric(item.offer);
-        const badgeBg = getPriceBadgeColor(priceValue, minPrice, maxPrice, mapPriceColoringEnabled);
-        let marker = null;
-        if (photoUrl) {
-          const imageIcon = L.divIcon({
-            className: "olx-map-image-marker",
-            html:
-              `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;">` +
-              `<div style="width:46px;height:46px;border:2px solid #fff;border-radius:8px;` +
-              `box-shadow:0 4px 10px rgba(0,0,0,0.28);overflow:hidden;background:#fff;">` +
-              `<img src="${escapeHtml(photoUrl)}" alt="" style="display:block;width:100%;height:100%;object-fit:cover;" />` +
-              `</div>` +
-              `<div style="max-width:90px;padding:1px 6px;border-radius:999px;background:${badgeBg};color:#fff;` +
-              `font:700 11px/1.5 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(priceDisplay)}</div>` +
-              `</div>`,
-            iconSize: [90, 66],
-            iconAnchor: [45, 56],
-            popupAnchor: [0, -42]
-          });
-          marker = L.marker(latLng, { icon: imageIcon });
-        } else {
-          marker = L.marker(latLng);
-        }
-
-        marker.bindPopup(buildOfferPopupHtml(item));
-        markerLayer.addLayer(marker);
-
-        const radiusKm = Number(item?.map?.radius);
-        if (Number.isFinite(radiusKm) && radiusKm > 0) {
-          L.circle(latLng, {
-            radius: radiusKm * 1000,
-            color: "#2563eb",
-            weight: 1,
-            fillColor: "#60a5fa",
-            fillOpacity: 0.08
-          }).addTo(leafletMap);
-        }
+        addOfferToExistingMap(item, { minPrice, maxPrice });
       }
 
       if (latLngs.length === 1) {
