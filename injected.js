@@ -85,6 +85,20 @@
     }
   };
 
+  const getFirstPhotoUrl = (offer) => {
+    const firstPhotoSet = offer?.photosSet?.[0];
+    if (typeof firstPhotoSet !== "string" || !firstPhotoSet.trim()) {
+      return null;
+    }
+
+    const firstCandidate = firstPhotoSet.split(",")[0]?.trim();
+    const firstUrl = firstCandidate?.split(/\s+/)[0]?.trim();
+    if (!firstUrl || (!firstUrl.startsWith("http://") && !firstUrl.startsWith("https://"))) {
+      return null;
+    }
+    return firstUrl;
+  };
+
   const renderModalRows = () => {
     const list = document.getElementById(MAP_LIST_ID);
     if (!list) {
@@ -205,7 +219,25 @@
         const latLng = [lat, lon];
         latLngs.push(latLng);
 
-        const marker = L.marker(latLng).addTo(leafletMap);
+        const photoUrl = getFirstPhotoUrl(item.offer);
+        let marker = null;
+        if (photoUrl) {
+          const imageIcon = L.divIcon({
+            className: "olx-map-image-marker",
+            html:
+              `<div style="width:46px;height:46px;border:2px solid #fff;border-radius:8px;` +
+              `box-shadow:0 4px 10px rgba(0,0,0,0.28);overflow:hidden;background:#fff;">` +
+              `<img src="${escapeHtml(photoUrl)}" alt="" style="display:block;width:100%;height:100%;object-fit:cover;" />` +
+              `</div>`,
+            iconSize: [46, 46],
+            iconAnchor: [23, 23],
+            popupAnchor: [0, -20]
+          });
+          marker = L.marker(latLng, { icon: imageIcon }).addTo(leafletMap);
+        } else {
+          marker = L.marker(latLng).addTo(leafletMap);
+        }
+
         marker.bindPopup(
           `<strong>Oferta ${escapeHtml(item.id)}</strong><br/>lat: ${lat.toFixed(5)}, lon: ${lon.toFixed(5)}`
         );
