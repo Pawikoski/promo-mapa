@@ -563,6 +563,67 @@ ${descriptionPart}
     return { offset, limit: DEFAULT_LIMIT, lastSeenId, sl };
   };
 
+  const toAbsoluteUrl = (href) => {
+    if (typeof href !== "string" || !href.trim()) {
+      return null;
+    }
+    try {
+      return new URL(href, window.location.origin).toString();
+    } catch {
+      return null;
+    }
+  };
+
+  const extractNextHrefFromResponse = (payload) => {
+    const candidates = [
+      payload?.data?.clientComptabileListings?.links?.next?.href,
+      payload?.data?.clientCompatibleListings?.links?.next?.href,
+      payload?.links?.next?.href,
+      payload?.data?.links?.next?.href
+    ];
+
+    for (const href of candidates) {
+      const absolute = toAbsoluteUrl(href);
+      if (absolute) {
+        return absolute;
+      }
+    }
+
+    return null;
+  };
+
+  const fetchJsonFromUrl = async (url) => {
+    const response = await fetch(url, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        accept: "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`request failed (${response.status}) for ${url}`);
+    }
+
+    return response.json();
+  };
+
+  const followNextLinks = async (initialPayload) => {
+    const maxIterations = 5;
+    let nextUrl = extractNextHrefFromResponse(initialPayload);
+    let iteration = 0;
+
+    while (nextUrl && iteration < maxIterations) {
+      iteration += 1;
+      const responsePayload = await fetchJsonFromUrl(nextUrl);
+      console.log(`OLX next request #${iteration} url:`, nextUrl);
+      console.log(`OLX next request #${iteration} response:`, responsePayload);
+      nextUrl = extractNextHrefFromResponse(responsePayload);
+    }
+
+    return iteration;
+  };
+
   const fetchFriendlyLinks = async () => {
     const pathSegments = window.location.pathname
       .split("/")
@@ -628,7 +689,10 @@ ${descriptionPart}
 
         const response2 = await graphqlResponse.json();
         console.log("OLX graphql ListingSearchQuery response:", response2);
-        setMapStatus("Wyslano request #2 do GraphQL i zalogowano odpowiedz.");
+        const nextRequestsCount = await followNextLinks(response2);
+        setMapStatus(
+          `Wyslano request #2 do GraphQL. Dodatkowe requesty po next.href: ${nextRequestsCount} (max 5).`
+        );
       } catch (error) {
         console.error("OLX load button error:", error);
         setMapStatus("Nie udalo sie pobrac danych lub wykonac requestu GraphQL.");
