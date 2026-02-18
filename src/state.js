@@ -10,4 +10,5 @@ export const state = {
   loadInProgress: false,
   mapGroupingEnabled: false,
   mapPriceColoringEnabled: true,
+  renderMode: 'modal',
 };

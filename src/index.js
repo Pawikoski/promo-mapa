@@ -2,6 +2,9 @@ import { TARGET_URL } from "./constants.js";
 import { tryParseJson } from "./utils.js";
 import { logOffers, logPrerenderedOffers, setRenderModalRowsFn } from "./offers.js";
 import { observeUi, renderModalRows } from "./ui.js";
+import { state } from "./state.js";
+
+state.renderMode = document.currentScript?.dataset?.olxMapRenderMode ?? 'modal';
 
 setRenderModalRowsFn(renderModalRows);
 

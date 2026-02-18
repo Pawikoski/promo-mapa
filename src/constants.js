@@ -7,6 +7,7 @@ export const MAP_STATUS_ID = "olx-map-status";
 export const MAP_LOAD_BUTTON_ID = "olx-map-load-button";
 export const MAP_GROUP_TOGGLE_ID = "olx-map-group-toggle";
 export const MAP_PRICE_COLOR_TOGGLE_ID = "olx-map-price-color-toggle";
+export const MAP_INLINE_CONTAINER_ID = "olx-map-inline-container";
 export const FRIENDLY_LINKS_API = "https://www.olx.pl/api/v1/friendly-links/query-params/";
 export const DEFAULT_LIMIT = 40;
 export const DEFAULT_OFFSET = 0;

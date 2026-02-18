@@ -3,6 +3,16 @@
   "name": "OLX map",
   "version": "0.1.0",
   "description": "olx map",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "olx-map@example.com"
+    }
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "OLX Map – Ustawienia"
+  },
+  "permissions": ["storage", "tabs"],
   "content_scripts": [
     {
       "matches": [

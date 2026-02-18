@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      color: #111827;
+    }
+    h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+    .options {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .option-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      cursor: pointer;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      transition: background 0.1s;
+    }
+    .option-item:hover {
+      background: #f9fafb;
+    }
+    .option-item input[type="radio"] {
+      margin-top: 3px;
+      flex-shrink: 0;
+      accent-color: #2563eb;
+    }
+    .option-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #111827;
+    }
+    .option-desc {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 3px;
+      line-height: 1.45;
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid #e5e7eb;
+      margin: 14px 0;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 9px 12px;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn:disabled { background: #93c5fd; cursor: not-allowed; }
+    .status {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #6b7280;
+      text-align: center;
+      min-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h2>OLX Map – Ustawienia</h2>
+  <div class="options">
+    <label class="option-item">
+      <input type="radio" name="renderMode" value="modal" />
+      <span>
+        <div class="option-label">Modal</div>
+        <div class="option-desc">Przycisk „Mapa" obok przycisku obserwowania. Mapa otwiera się w oknie nakładkowym.</div>
+      </span>
+    </label>
+    <label class="option-item">
+      <input type="radio" name="renderMode" value="inline-start" />
+      <span>
+        <div class="option-label">Inline – na początku filtrów</div>
+        <div class="option-desc">Mapa wstawiona na początku kontenera filtrów (listing-filters), wyśrodkowana.</div>
+      </span>
+    </label>
+    <label class="option-item">
+      <input type="radio" name="renderMode" value="inline-after-first" />
+      <span>
+        <div class="option-label">Inline – za pierwszym elementem filtrów</div>
+        <div class="option-desc">Mapa wstawiona za pierwszym &lt;div&gt; wewnątrz kontenera filtrów, wyśrodkowana.</div>
+      </span>
+    </label>
+  </div>
+  <hr class="divider" />
+  <button class="btn" id="saveBtn">Zapisz i przeładuj stronę</button>
+  <div class="status" id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

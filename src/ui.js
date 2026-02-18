@@ -6,7 +6,8 @@ import {
   MAP_STATUS_ID,
   MAP_LOAD_BUTTON_ID,
   MAP_GROUP_TOGGLE_ID,
-  MAP_PRICE_COLOR_TOGGLE_ID
+  MAP_PRICE_COLOR_TOGGLE_ID,
+  MAP_INLINE_CONTAINER_ID
 } from "./constants.js";
 import { OFFER_STORE, state } from "./state.js";
 import { getLocatedItems } from "./offers.js";
@@ -27,8 +28,11 @@ const renderModalRows = () => {
     return;
   }
 
+  const isInline = state.renderMode !== 'modal';
+  const mapHeight = isInline ? '60vh' : '76vh';
+
   list.innerHTML = `<div id="${MAP_STATUS_ID}" style="padding:0 0 10px;color:#57606a;font:13px/1.4 sans-serif;"></div>
-<div id="${MAP_CANVAS_ID}" style="height:76vh;border-radius:10px;border:1px solid #d1d5db;overflow:hidden;background:#f3f4f6;"></div>
+<div id="${MAP_CANVAS_ID}" style="height:${mapHeight};border-radius:10px;border:1px solid #d1d5db;overflow:hidden;background:#f3f4f6;"></div>
 <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
 <label style="display:inline-flex;align-items:center;gap:8px;font:600 13px/1.2 sans-serif;color:#111827;cursor:pointer;">
 <input id="${MAP_GROUP_TOGGLE_ID}" type="checkbox" ${state.mapGroupingEnabled ? "checked" : ""} />
@@ -226,9 +230,56 @@ const ensureMapButton = () => {
   }
 };
 
+const ensureInlineMap = () => {
+  const filtersContainer = document.querySelector('[data-testid="listing-filters"]');
+  if (!filtersContainer) {
+    return;
+  }
+
+  if (document.getElementById(MAP_INLINE_CONTAINER_ID)) {
+    return;
+  }
+
+  const container = document.createElement("div");
+  container.id = MAP_INLINE_CONTAINER_ID;
+  container.style.width = "100%";
+  container.style.gridColumn = "1 / -1";
+  container.style.padding = "16px 0";
+
+  const inner = document.createElement("div");
+  inner.style.maxWidth = "1200px";
+  inner.style.margin = "0 auto";
+  inner.style.padding = "0 16px";
+
+  const listDiv = document.createElement("div");
+  listDiv.id = MAP_LIST_ID;
+
+  inner.appendChild(listDiv);
+  container.appendChild(inner);
+
+  if (state.renderMode === "inline-start") {
+    filtersContainer.insertBefore(container, filtersContainer.firstChild);
+  } else {
+    const firstDiv = filtersContainer.querySelector(":scope > div");
+    if (firstDiv) {
+      firstDiv.insertAdjacentElement("afterend", container);
+    } else {
+      filtersContainer.insertBefore(container, filtersContainer.firstChild);
+    }
+  }
+
+  renderModalRows();
+};
+
 export const observeUi = () => {
-  ensureModal();
-  ensureMapButton();
+  const mode = state.renderMode;
+
+  if (mode === "modal") {
+    ensureModal();
+    ensureMapButton();
+  } else {
+    ensureInlineMap();
+  }
 
   let debounceTimer = null;
   let isUpdating = false;
@@ -239,7 +290,11 @@ export const observeUi = () => {
     debounceTimer = setTimeout(() => {
       isUpdating = true;
       try {
-        ensureMapButton();
+        if (mode === "modal") {
+          ensureMapButton();
+        } else {
+          ensureInlineMap();
+        }
       } finally {
         isUpdating = false;
       }

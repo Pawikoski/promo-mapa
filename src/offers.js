@@ -1,4 +1,4 @@
-import { MAP_MODAL_ID } from "./constants.js";
+import { MAP_MODAL_ID, MAP_INLINE_CONTAINER_ID } from "./constants.js";
 import { OFFER_STORE } from "./state.js";
 import { tryParseJson, escapeHtml, truncateHtmlPreserveTags } from "./utils.js";
 
@@ -40,10 +40,11 @@ export const upsertOffers = (offers, sourceLabel, options = {}) => {
   }
 
   const modal = document.getElementById(MAP_MODAL_ID);
-  if (!options.skipRender && modal && modal.style.display !== "none") {
-    if (renderModalRowsFn) {
-      renderModalRowsFn();
-    }
+  const inlineContainer = document.getElementById(MAP_INLINE_CONTAINER_ID);
+  const shouldRender = !options.skipRender && renderModalRowsFn &&
+    ((modal && modal.style.display !== "none") || inlineContainer != null);
+  if (shouldRender) {
+    renderModalRowsFn();
   }
   return addedItems;
 };
