@@ -1,18 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "OLX map",
+  "name": "PromoMapa",
   "version": "0.1.0",
-  "description": "olx map",
+  "icons": {
+    "128": "icons/icon128.png"
+  },
+  "description": "Rozszerzenie, które dodaje widok mapy (OpenStreetMap) dla wyników wyszukiwania na portalu OLX. Pokazuje oferty jako markery ze zdjęciem, ceną i popupem ze szczegółami.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "olx-map@example.com"
+      "id": "pawikoski@gmail.com"
     }
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "OLX Map – Ustawienia"
+    "default_title": "PromoMapa – Ustawienia"
   },
-  "permissions": ["storage", "tabs"],
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
   "content_scripts": [
     {
       "matches": [
