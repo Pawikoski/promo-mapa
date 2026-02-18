@@ -1,6 +1,11 @@
 import { MAP_CANVAS_ID, MAP_STATUS_ID } from "./constants.js";
 import { state } from "./state.js";
 import { escapeHtml, sleep } from "./utils.js";
+import L from "leaflet";
+import "leaflet.markercluster";
+import leafletCss from "leaflet/dist/leaflet.css";
+import markerClusterCss from "leaflet.markercluster/dist/MarkerCluster.css";
+import markerClusterDefaultCss from "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import {
   getFirstPhotoUrl,
   getOfferPriceDisplay,
@@ -9,6 +14,26 @@ import {
   getLocatedItems,
   buildOfferPopupHtml
 } from "./offers.js";
+
+const LEAFLET_STYLE_ID = "olx-map-leaflet-style";
+const MARKER_CLUSTER_STYLE_ID = "olx-map-markercluster-style";
+const MARKER_CLUSTER_DEFAULT_STYLE_ID = "olx-map-markercluster-default-style";
+
+const ensureStyle = (styleId, cssText) => {
+  if (document.getElementById(styleId)) {
+    return;
+  }
+  const style = document.createElement("style");
+  style.id = styleId;
+  style.textContent = cssText;
+  (document.head || document.documentElement).appendChild(style);
+};
+
+const ensureMapStyles = () => {
+  ensureStyle(LEAFLET_STYLE_ID, leafletCss);
+  ensureStyle(MARKER_CLUSTER_STYLE_ID, markerClusterCss);
+  ensureStyle(MARKER_CLUSTER_DEFAULT_STYLE_ID, markerClusterDefaultCss);
+};
 
 export const setMapStatus = (text) => {
   const statusNode = document.getElementById(MAP_STATUS_ID);
@@ -62,7 +87,20 @@ const addOfferToExistingMap = (item, priceRange) => {
     });
     marker = L.marker(latLng, { icon: imageIcon });
   } else {
-    marker = L.marker(latLng);
+    const fallbackIcon = L.divIcon({
+      className: "olx-map-fallback-marker",
+      html:
+        `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;">` +
+        `<div style="width:14px;height:14px;border:2px solid #fff;border-radius:50%;background:#0f766e;` +
+        `box-shadow:0 2px 8px rgba(0,0,0,0.28);"></div>` +
+        `<div style="max-width:90px;padding:1px 6px;border-radius:999px;background:${badgeBg};color:#fff;` +
+        `font:700 11px/1.5 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(priceDisplay)}</div>` +
+        `</div>`,
+      iconSize: [90, 34],
+      iconAnchor: [45, 30],
+      popupAnchor: [0, -22]
+    });
+    marker = L.marker(latLng, { icon: fallbackIcon });
   }
 
   marker.bindPopup(buildOfferPopupHtml(item));
@@ -98,92 +136,8 @@ export const addOffersSequentiallyToMap = async (addedItems, delayMs = 5) => {
 };
 
 const loadLeaflet = () => {
-  if (window.L) {
-    // continue to cluster plugin load below
-  } else if (state.leafletLoadPromise) {
-    return state.leafletLoadPromise;
-  }
-  if (!state.leafletLoadPromise) {
-    state.leafletLoadPromise = new Promise((resolve, reject) => {
-      const scriptSrc = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      const styleHref = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-
-      if (!document.querySelector(`link[href="${styleHref}"]`)) {
-        const style = document.createElement("link");
-        style.rel = "stylesheet";
-        style.href = styleHref;
-        style.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
-        style.crossOrigin = "";
-        document.head.appendChild(style);
-      }
-
-      if (window.L) {
-        resolve(window.L);
-        return;
-      }
-
-      const existingScript = document.querySelector(`script[src="${scriptSrc}"]`);
-      if (existingScript) {
-        existingScript.addEventListener("load", () => resolve(window.L));
-        existingScript.addEventListener("error", () => reject(new Error("Leaflet script error")));
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.src = scriptSrc;
-      script.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=";
-      script.crossOrigin = "";
-      script.onload = () => resolve(window.L);
-      script.onerror = () => reject(new Error("Leaflet script error"));
-      document.head.appendChild(script);
-    });
-  }
-
-  if (!state.markerClusterLoadPromise) {
-    state.markerClusterLoadPromise = state.leafletLoadPromise.then((L) => {
-      if (!L) {
-        return L;
-      }
-      if (typeof L.markerClusterGroup === "function") {
-        return L;
-      }
-
-      const clusterStyleHref = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css";
-      const clusterDefaultStyleHref =
-        "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css";
-      const clusterScriptSrc = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js";
-
-      if (!document.querySelector(`link[href="${clusterStyleHref}"]`)) {
-        const style = document.createElement("link");
-        style.rel = "stylesheet";
-        style.href = clusterStyleHref;
-        document.head.appendChild(style);
-      }
-      if (!document.querySelector(`link[href="${clusterDefaultStyleHref}"]`)) {
-        const style = document.createElement("link");
-        style.rel = "stylesheet";
-        style.href = clusterDefaultStyleHref;
-        document.head.appendChild(style);
-      }
-
-      return new Promise((resolve) => {
-        const existingScript = document.querySelector(`script[src="${clusterScriptSrc}"]`);
-        if (existingScript) {
-          existingScript.addEventListener("load", () => resolve(window.L));
-          existingScript.addEventListener("error", () => resolve(window.L));
-          return;
-        }
-
-        const script = document.createElement("script");
-        script.src = clusterScriptSrc;
-        script.onload = () => resolve(window.L);
-        script.onerror = () => resolve(window.L);
-        document.head.appendChild(script);
-      });
-    });
-  }
-
-  return state.markerClusterLoadPromise;
+  ensureMapStyles();
+  return Promise.resolve(L);
 };
 
 let _renderGeneration = 0;
