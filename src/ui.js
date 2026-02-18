@@ -282,21 +282,14 @@ export const observeUi = () => {
   }
 
   let debounceTimer = null;
-  let isUpdating = false;
 
   const debouncedEnsure = () => {
-    if (isUpdating) return;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      isUpdating = true;
-      try {
-        if (mode === "modal") {
-          ensureMapButton();
-        } else {
-          ensureInlineMap();
-        }
-      } finally {
-        isUpdating = false;
+      if (mode === "modal") {
+        ensureMapButton();
+      } else {
+        ensureInlineMap();
       }
     }, 200);
   };

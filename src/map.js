@@ -186,11 +186,15 @@ const loadLeaflet = () => {
   return state.markerClusterLoadPromise;
 };
 
+let _renderGeneration = 0;
+
 export const renderLeafletMap = async (locatedItems, useGrouping = false) => {
   const mapNode = document.getElementById(MAP_CANVAS_ID);
   if (!mapNode) {
     return;
   }
+
+  const myGeneration = ++_renderGeneration;
 
   if (!locatedItems.length) {
     setMapStatus("Brak współrzędnych w offer.map (lat/lon).");
@@ -204,6 +208,10 @@ export const renderLeafletMap = async (locatedItems, useGrouping = false) => {
     const L = await loadLeaflet();
     if (!L) {
       setMapStatus("Nie udało się załadować biblioteki mapy.");
+      return;
+    }
+
+    if (_renderGeneration !== myGeneration || !mapNode.isConnected) {
       return;
     }
 
